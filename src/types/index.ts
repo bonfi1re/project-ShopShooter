@@ -64,6 +64,7 @@ export interface LeaderboardEntry {
   badge: string;
   isCurrentUser?: boolean;
   rewardTier: string;
+  playerId?: string;
 }
 
 export interface FloatingNotification {

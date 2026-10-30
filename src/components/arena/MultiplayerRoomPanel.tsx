@@ -255,7 +255,7 @@ export const MultiplayerRoomPanel: React.FC<MultiplayerRoomPanelProps> = ({
                 if (player) {
                   const isLocal = isLocalPlayer(player.id);
                   const isHost = idx === 0 || player.isHost;
-                  const displayName = (player.name || player.username || (isLocal ? playerName : 'Player')).trim();
+                  const displayName = (isLocal ? (playerName || 'Kamu') : (player.name || player.username || 'Player')).trim();
                   return (
                     <div key={player.id || idx} className={`flex items-center justify-between px-2.5 py-1 rounded-lg text-xs border ${
                       isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-xs'
@@ -314,7 +314,7 @@ export const MultiplayerRoomPanel: React.FC<MultiplayerRoomPanelProps> = ({
               {redSlots.map((player, idx) => {
                 if (player) {
                   const isLocal = isLocalPlayer(player.id);
-                  const displayName = (player.name || player.username || (isLocal ? playerName : 'Player')).trim();
+                  const displayName = (isLocal ? (playerName || 'Kamu') : (player.name || player.username || 'Player')).trim();
                   return (
                     <div key={player.id || idx} className={`flex items-center justify-between px-2.5 py-1 rounded-lg text-xs border ${
                       isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-xs'

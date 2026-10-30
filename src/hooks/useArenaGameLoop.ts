@@ -86,182 +86,194 @@ export const useArenaGameLoop = ({
     let hudTimerAccumulator = 0;
     let animFrameId: number | null = null;
 
+    let isLoopActive = true;
+
     const loop = (time: number) => {
-      const dt = Math.min(0.08, (time - lastTick) / 1000);
-      lastTick = time;
-      hudTimerAccumulator += dt;
+      if (!isLoopActive) return;
 
-      const sim = simState.current;
-      const canvas = canvasRef.current;
-      const ctx = canvas?.getContext('2d');
+      try {
+        const dt = Math.min(0.08, (time - lastTick) / 1000);
+        lastTick = time;
+        hudTimerAccumulator += dt;
 
-      // 1. Process Respawn & Shield Timers
-      sim.players.forEach((p) => {
-        if (p.isRespawning) {
-          p.respawnTimer -= dt;
-          if (isLocalPlayer(p.id)) {
-            setHudRespawnTimer(Math.max(0, p.respawnTimer));
+        const sim = simState.current;
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext('2d');
+
+        // 1. Process Respawn & Shield Timers
+        sim.players.forEach((p) => {
+          if (p.isRespawning) {
+            p.respawnTimer -= dt;
+            if (isLocalPlayer(p.id)) {
+              setHudRespawnTimer(Math.max(0, p.respawnTimer));
+            }
+            if (p.respawnTimer <= 0) {
+              respawnSinglePlayer(p);
+            }
           }
-          if (p.respawnTimer <= 0) {
-            respawnSinglePlayer(p);
-          }
-        }
-        if (p.shieldTimer && p.shieldTimer > 0) {
-          p.shieldTimer -= dt;
-          if (p.shieldTimer <= 0) {
-            p.shieldTimer = 0;
+          if (p.shieldTimer && p.shieldTimer > 0) {
+            p.shieldTimer -= dt;
+            if (p.shieldTimer <= 0) {
+              p.shieldTimer = 0;
+              p.isShielded = false;
+            }
+          } else if (!p.activeSkill || p.activeSkill.type !== 'shield') {
             p.isShielded = false;
           }
-        } else if (!p.activeSkill || p.activeSkill.type !== 'shield') {
-          p.isShielded = false;
-        }
-      });
+        });
 
-      // 2. Match Timer & HUD updates
-      if (hudTimerAccumulator >= 0.5) {
-        hudTimerAccumulator = 0;
-        sim.timeLeft -= 0.5;
-        setHudTimeLeft(Math.max(0, Math.floor(sim.timeLeft)));
-        setHudBlueScore(sim.blueScore);
-        setHudRedScore(sim.redScore);
+        // 2. Match Timer & HUD updates
+        if (hudTimerAccumulator >= 0.5) {
+          hudTimerAccumulator = 0;
+          sim.timeLeft -= 0.5;
+          setHudTimeLeft(Math.max(0, Math.floor(sim.timeLeft)));
+          setHudBlueScore(sim.blueScore);
+          setHudRedScore(sim.redScore);
 
-        const cdRemaining = Math.max(0, 3.5 - (Date.now() - lastDashTime.current) / 1000);
-        setHudDashCooldown(cdRemaining > 0.05 ? cdRemaining : 0);
+          const cdRemaining = Math.max(0, 3.5 - (Date.now() - lastDashTime.current) / 1000);
+          setHudDashCooldown(cdRemaining > 0.05 ? cdRemaining : 0);
 
-        const myP = sim.players.find((p) => isLocalPlayer(p.id));
-        if (myP) {
-          setHudMyHp(myP.hp);
-          setHudMyKills(myP.kills);
-          if (myP.activeSkill && myP.activeSkill.timeLeft > 0) {
-            setHudActiveSkill({
-              type: myP.activeSkill.type,
-              label: myP.activeSkill.type.toUpperCase(),
-              timeLeft: Math.ceil(myP.activeSkill.timeLeft),
-            });
-          } else {
-            setHudActiveSkill(null);
+          const myP = sim.players.find((p) => isLocalPlayer(p.id));
+          if (myP) {
+            setHudMyHp(myP.hp);
+            setHudMyKills(myP.kills);
+            if (myP.activeSkill && myP.activeSkill.timeLeft > 0) {
+              setHudActiveSkill({
+                type: myP.activeSkill.type,
+                label: myP.activeSkill.type.toUpperCase(),
+                timeLeft: Math.ceil(myP.activeSkill.timeLeft),
+              });
+            } else {
+              setHudActiveSkill(null);
+            }
+          }
+
+          if (sim.timeLeft <= 0) {
+            isLoopActive = false;
+            finishMatch();
+            return;
           }
         }
 
-        if (sim.timeLeft <= 0) {
-          finishMatch();
-          return;
+        if (isMouseDown.current) {
+          shootLaser(myPlayerId.current);
         }
-      }
 
-      if (isMouseDown.current) {
-        shootLaser(myPlayerId.current);
-      }
+        sim.players.forEach((p) => {
+          if (p.activeSkill) {
+            p.activeSkill.timeLeft -= dt;
+            if (p.activeSkill.timeLeft <= 0) {
+              p.activeSkill = undefined;
+            }
+          }
+        });
 
-      sim.players.forEach((p) => {
-        if (p.activeSkill) {
-          p.activeSkill.timeLeft -= dt;
-          if (p.activeSkill.timeLeft <= 0) {
-            p.activeSkill = undefined;
+        // 3. Player & Bot Movement System
+        updatePlayerMovementSystem({
+          simPlayers: sim.players,
+          currentTheme: sim.currentTheme,
+          dt,
+          isLocalPlayer,
+          getCharacterStats,
+          keysPressed: keysPressed.current,
+          mobileMoveVector: mobileMoveVector.current,
+          myPlayerId: myPlayerId.current,
+          wsRef,
+          shootLaser,
+        });
+
+        // 4. Combat & Collision System
+        updateCombatCollisionSystem({
+          sim,
+          dt,
+          isLocalPlayer,
+          getCharacterStats,
+          addDamageText,
+          addKillFeed,
+        });
+
+        // 5. Update Ambient & Shopping Particles
+        sim.ambientParticles.forEach((part) => {
+          part.x += part.vx;
+          part.y += part.vy;
+          if (part.y < 0) part.y = WORLD_HEIGHT;
+          if (part.x < 0) part.x = WORLD_WIDTH;
+          if (part.x > WORLD_WIDTH) part.x = 0;
+        });
+
+        for (let sp = sim.shoppingParticles.length - 1; sp >= 0; sp--) {
+          const part = sim.shoppingParticles[sp];
+          part.x += part.vx;
+          part.y += part.vy;
+          part.vy += 0.2;
+          part.vx *= 0.95;
+          part.rotation += part.vRot;
+          part.alpha -= 0.018;
+          if (part.alpha <= 0) {
+            sim.shoppingParticles.splice(sp, 1);
           }
         }
-      });
 
-      // 3. Player & Bot Movement System
-      updatePlayerMovementSystem({
-        simPlayers: sim.players,
-        currentTheme: sim.currentTheme,
-        dt,
-        isLocalPlayer,
-        getCharacterStats,
-        keysPressed: keysPressed.current,
-        mobileMoveVector: mobileMoveVector.current,
-        myPlayerId: myPlayerId.current,
-        wsRef,
-        shootLaser,
-      });
-
-      // 4. Combat & Collision System
-      updateCombatCollisionSystem({
-        sim,
-        dt,
-        isLocalPlayer,
-        getCharacterStats,
-        addDamageText,
-        addKillFeed,
-      });
-
-      // 5. Update Ambient & Shopping Particles
-      sim.ambientParticles.forEach((part) => {
-        part.x += part.vx;
-        part.y += part.vy;
-        if (part.y < 0) part.y = WORLD_HEIGHT;
-        if (part.x < 0) part.x = WORLD_WIDTH;
-        if (part.x > WORLD_WIDTH) part.x = 0;
-      });
-
-      for (let sp = sim.shoppingParticles.length - 1; sp >= 0; sp--) {
-        const part = sim.shoppingParticles[sp];
-        part.x += part.vx;
-        part.y += part.vy;
-        part.vy += 0.2;
-        part.vx *= 0.95;
-        part.rotation += part.vRot;
-        part.alpha -= 0.018;
-        if (part.alpha <= 0) {
-          sim.shoppingParticles.splice(sp, 1);
+        // 6. Camera Tracking
+        if (canvas) {
+          const viewW = canvas.width;
+          const viewH = canvas.height;
+          const focusP = sim.players.find((p) => isLocalPlayer(p.id));
+          if (focusP) {
+            sim.cameraX = Math.max(0, Math.min(WORLD_WIDTH - viewW, focusP.x - viewW / 2));
+            sim.cameraY = Math.max(0, Math.min(WORLD_HEIGHT - viewH, focusP.y - viewH / 2));
+          }
         }
-      }
 
-      // 6. Camera Tracking
-      if (canvas) {
-        const viewW = canvas.width;
-        const viewH = canvas.height;
-        const focusP = sim.players.find((p) => isLocalPlayer(p.id));
-        if (focusP) {
-          sim.cameraX = Math.max(0, Math.min(WORLD_WIDTH - viewW, focusP.x - viewW / 2));
-          sim.cameraY = Math.max(0, Math.min(WORLD_HEIGHT - viewH, focusP.y - viewH / 2));
-        }
-      }
-
-      // 7. Render Pass (Main Battlefield)
-      if (canvas && ctx) {
-        try {
-          renderPassSystem({
-            ctx,
-            canvas,
-            sim,
-            isDark,
-            isLocalPlayer,
-          });
-        } catch (renderErr) {
-          console.error("Render pass error:", renderErr);
-        }
-      }
-
-      // 8. Radar Minimap Pass
-      if (minimapCanvasRef?.current) {
-        const miniCanvas = minimapCanvasRef.current;
-        const miniCtx = miniCanvas.getContext('2d');
-        if (miniCtx) {
+        // 7. Render Pass (Main Battlefield)
+        if (canvas && ctx) {
           try {
-            renderTacticalRadar({
-              ctx: miniCtx,
-              width: miniCanvas.width || 240,
-              height: miniCanvas.height || 140,
+            renderPassSystem({
+              ctx,
+              canvas,
               sim,
-              viewW: canvas?.width || 1200,
-              viewH: canvas?.height || 800,
-              isLocalPlayer,
               isDark,
+              isLocalPlayer,
             });
-          } catch (radarErr) {
-            console.error("Radar render error:", radarErr);
+          } catch (renderErr) {
+            console.error("Render pass error:", renderErr);
           }
         }
-      }
 
-      animFrameId = requestAnimationFrame(loop);
+        // 8. Radar Minimap Pass
+        if (minimapCanvasRef?.current) {
+          const miniCanvas = minimapCanvasRef.current;
+          const miniCtx = miniCanvas.getContext('2d');
+          if (miniCtx) {
+            try {
+              renderTacticalRadar({
+                ctx: miniCtx,
+                width: miniCanvas.width || 240,
+                height: miniCanvas.height || 140,
+                sim,
+                viewW: canvas?.width || 1200,
+                viewH: canvas?.height || 800,
+                isLocalPlayer,
+                isDark,
+              });
+            } catch (radarErr) {
+              console.error("Radar render error:", radarErr);
+            }
+          }
+        }
+      } catch (loopErr) {
+        console.error("Game loop tick error:", loopErr);
+      } finally {
+        if (isLoopActive) {
+          animFrameId = requestAnimationFrame(loop);
+        }
+      }
     };
 
     animFrameId = requestAnimationFrame(loop);
 
     return () => {
+      isLoopActive = false;
       if (animFrameId) {
         cancelAnimationFrame(animFrameId);
       }

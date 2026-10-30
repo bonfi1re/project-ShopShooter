@@ -27,7 +27,9 @@ import { PowerUpStore } from './components/PowerUpStore';
 import { SpecialTargetNotification } from './components/SpecialTargetNotification';
 import { DailyChallengeModal } from './components/DailyChallengeModal';
 import { soundEngine } from './utils/audio';
-import { getStoredProfile, subscribeToProfileUpdates } from './services/profileStorage';
+import { getStoredProfile, getMyPlayerId, subscribeToProfileUpdates, saveStoredProfile } from './services/profileStorage';
+
+const STORAGE_KEY_LEADERBOARD = 'shopshooter_global_leaderboard';
 
 export default function App() {
   const [isDailyModalOpen, setIsDailyModalOpen] = useState<boolean>(false);
@@ -74,18 +76,79 @@ export default function App() {
 
   const [powerUpInventory, setPowerUpInventory] = useState<PowerUpItem[]>(INITIAL_POWER_UPS);
 
-  // Leaderboard & Player Identity
+  // Leaderboard & Player Identity (Synchronized with Player Profile as single source of truth)
   const [currentUsername, setCurrentUsername] = useState<string>(() => {
     return getStoredProfile().username;
   });
 
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>(() => {
+    const profile = getStoredProfile();
+    const myId = getMyPlayerId();
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_LEADERBOARD);
+      if (saved) {
+        const parsed: LeaderboardEntry[] = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Sync any existing entry of current player with latest profile username
+          return parsed.map((entry) => {
+            if (entry.isCurrentUser || (entry.playerId && entry.playerId === myId)) {
+              return {
+                ...entry,
+                isCurrentUser: true,
+                playerId: myId,
+                username: profile.username || entry.username,
+              };
+            }
+            return entry;
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to parse leaderboard from storage:', err);
+    }
+    return INITIAL_LEADERBOARD;
+  });
+
+  // Sync profile changes into state and leaderboard automatically
   useEffect(() => {
+    const myId = getMyPlayerId();
     const unsub = subscribeToProfileUpdates((profile) => {
       setCurrentUsername(profile.username);
+
+      setLeaderboard((prev) => {
+        let changed = false;
+        const updated = prev.map((entry) => {
+          const isUser = entry.isCurrentUser || (entry.playerId && entry.playerId === myId);
+          if (isUser && entry.username !== profile.username) {
+            changed = true;
+            return {
+              ...entry,
+              isCurrentUser: true,
+              playerId: myId,
+              username: profile.username,
+            };
+          }
+          return entry;
+        });
+
+        if (changed) {
+          try {
+            localStorage.setItem(STORAGE_KEY_LEADERBOARD, JSON.stringify(updated));
+          } catch {}
+          return updated;
+        }
+        return prev;
+      });
     });
     return unsub;
   }, []);
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>(INITIAL_LEADERBOARD);
+
+  // Persist leaderboard changes to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_LEADERBOARD, JSON.stringify(leaderboard));
+    } catch {}
+  }, [leaderboard]);
 
   // Notifications
   const [notifications, setNotifications] = useState<FloatingNotification[]>([]);
@@ -165,20 +228,54 @@ export default function App() {
     return true;
   };
 
-  // Leaderboard submit
-  const handleSubmitScoreToLeaderboard = (username: string) => {
+  // Update username directly into the single source of truth (profile storage)
+  const handleUpdateUsername = (newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed.length < 2 || trimmed.length > 20) return;
+    const saveRes = saveStoredProfile({ username: trimmed }, userDiscountPoints);
+    if (saveRes.success) {
+      setCurrentUsername(trimmed);
+    }
+  };
+
+  // Leaderboard submit (persisted, keyed to player ID, using synchronized profile username)
+  const handleSubmitScoreToLeaderboard = (customName?: string) => {
+    const myId = getMyPlayerId();
+    let finalName = (customName && customName.trim()) || '';
+    if (finalName && finalName.length >= 2 && finalName.length <= 20) {
+      // Synchronize back to profile storage
+      saveStoredProfile({ username: finalName }, userDiscountPoints);
+      setCurrentUsername(finalName);
+    } else {
+      finalName = getStoredProfile(userDiscountPoints).username || 'Pemain';
+    }
+
+    const existingEntry = leaderboard.find(
+      (e) => e.isCurrentUser || (e.playerId && e.playerId === myId)
+    );
+
+    // Retain the highest score achieved so far or the current points
+    const targetScore = existingEntry
+      ? Math.max(existingEntry.score, userDiscountPoints)
+      : userDiscountPoints;
+
     const newEntry: LeaderboardEntry = {
       rank: 1,
-      username,
-      score: userDiscountPoints,
+      username: finalName,
+      score: targetScore,
       date: 'Hari Ini',
-      badge: '🎯 Shooter Aktif',
+      badge: targetScore >= 1800 ? '👑 Juara 1 Nasional' : targetScore >= 1500 ? '🥈 Peringkat Top' : '🎯 Shooter Aktif',
       isCurrentUser: true,
+      playerId: myId,
       rewardTier: 'Mendapatkan Voucher',
     };
 
-    // Recalculate ranks
-    const merged = [...leaderboard.filter((e) => !e.isCurrentUser), newEntry];
+    // Filter out old records for this player to prevent duplicates
+    const others = leaderboard.filter(
+      (e) => !e.isCurrentUser && (!e.playerId || e.playerId !== myId)
+    );
+
+    const merged = [...others, newEntry];
     merged.sort((a, b) => b.score - a.score);
     const updated = merged.map((entry, idx) => ({
       ...entry,
@@ -186,6 +283,15 @@ export default function App() {
     }));
 
     setLeaderboard(updated);
+    try {
+      localStorage.setItem(STORAGE_KEY_LEADERBOARD, JSON.stringify(updated));
+    } catch {}
+
+    addNotification(
+      'info',
+      'Skor Berhasil Dikirim!',
+      `Skor ${targetScore.toLocaleString('id-ID')} poin atas nama ${finalName} telah tercatat di Papan Peringkat Global.`
+    );
   };
 
   return (
@@ -219,6 +325,7 @@ export default function App() {
       <main className="flex-1 max-w-6xl w-full mx-auto px-3 md:px-6 pt-4 md:pt-6 pb-8">
         {activeTab === 'multiplayer' && (
           <MultiplayerArena
+            currentUsername={currentUsername}
             userDiscountPoints={userDiscountPoints}
             onAddDiscountPoints={handleAddDiscountPoints}
             onNavigateToCart={() => setActiveTab('powerups')}
@@ -246,7 +353,7 @@ export default function App() {
             leaderboard={leaderboard}
             currentUserScore={userDiscountPoints}
             currentUsername={currentUsername}
-            onUpdateUsername={setCurrentUsername}
+            onUpdateUsername={handleUpdateUsername}
             onSubmitScoreToLeaderboard={handleSubmitScoreToLeaderboard}
             onNavigateToShooter={() => setActiveTab('multiplayer')}
             themeMode={themeMode}

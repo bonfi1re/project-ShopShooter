@@ -87,6 +87,7 @@ export const ArenaLobbyView: React.FC<ArenaLobbyViewProps> = ({
 }) => {
   const currentMapIndex = MAP_CATALOG.findIndex((m) => m.id === selectedMapTheme);
   const activeMap = MAP_CATALOG[currentMapIndex >= 0 ? currentMapIndex : 0];
+  const safePlayerName = (playerName || 'Tester').trim();
 
   const handleBotCountChange = (delta: number) => {
     const nextCount = Math.min(8, Math.max(2, totalPlayersConfig + delta));
@@ -128,7 +129,7 @@ export const ArenaLobbyView: React.FC<ArenaLobbyViewProps> = ({
             }`}
           >
             <div className="w-8 h-8 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center text-xs font-black shrink-0">
-              {playerName ? playerName.charAt(0).toUpperCase() : 'P'}
+              {safePlayerName ? safePlayerName.charAt(0).toUpperCase() : 'P'}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-1 leading-none mb-0.5">
@@ -138,7 +139,7 @@ export const ArenaLobbyView: React.FC<ArenaLobbyViewProps> = ({
               <div className={`w-full bg-transparent text-xs font-black border-none p-0 focus:outline-none truncate ${
                   isDark ? 'text-white' : 'text-slate-900'
                 }`}>
-                {playerName}
+                {safePlayerName}
               </div>
             </div>
           </button>
@@ -258,7 +259,7 @@ export const ArenaLobbyView: React.FC<ArenaLobbyViewProps> = ({
               selectedMapTheme={selectedMapTheme}
               setShowMapSelectorModal={setShowMapSelectorModal}
               isLocalPlayer={isLocalPlayer}
-              playerName={playerName}
+              playerName={safePlayerName}
             />
           ) : (
             <SoloLobbyPanel
@@ -270,7 +271,7 @@ export const ArenaLobbyView: React.FC<ArenaLobbyViewProps> = ({
               isSelectingPlayers={isSelectingPlayers}
               setIsSelectingPlayers={setIsSelectingPlayers}
               startMatch={() => startMatch('bot')}
-              playerName={playerName}
+              playerName={safePlayerName}
             />
           )}
         </div>

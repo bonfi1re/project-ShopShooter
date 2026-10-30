@@ -68,6 +68,13 @@ export const updateCombatCollisionSystem = ({
   });
 
   // 2. Update Bullets & Collisions
+  if (sim.bullets.length > 150) {
+    sim.bullets.splice(0, sim.bullets.length - 120);
+  }
+  if (sim.shoppingParticles && sim.shoppingParticles.length > 100) {
+    sim.shoppingParticles.splice(0, sim.shoppingParticles.length - 80);
+  }
+
   for (let i = sim.bullets.length - 1; i >= 0; i--) {
     const b = sim.bullets[i];
     b.x += b.vx;

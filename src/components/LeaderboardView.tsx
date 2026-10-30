@@ -36,10 +36,13 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
   const isDark = themeMode === 'dark';
   const [activeTab, setActiveTab] = useState<'ranks' | 'rewards'>('ranks');
   const [inputName, setInputName] = useState<string>(currentUsername);
+  const [inputError, setInputError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState<boolean>(false);
 
+  // Synchronize inputName whenever profile username changes
   useEffect(() => {
     setInputName(currentUsername);
+    setInputError(null);
   }, [currentUsername]);
 
   const [timeLeft, setTimeLeft] = useState<number>(() => {
@@ -106,9 +109,23 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputName.trim()) return;
-    onUpdateUsername(inputName.trim());
-    onSubmitScoreToLeaderboard(inputName.trim());
+    setInputError(null);
+    const trimmed = inputName.trim();
+    if (!trimmed) {
+      setInputError('Nama pemain tidak boleh kosong.');
+      return;
+    }
+    if (trimmed.length < 2) {
+      setInputError('Nama pemain minimal 2 karakter.');
+      return;
+    }
+    if (trimmed.length > 20) {
+      setInputError('Nama pemain maksimal 20 karakter.');
+      return;
+    }
+
+    onUpdateUsername(trimmed);
+    onSubmitScoreToLeaderboard(trimmed);
     setSubmitted(true);
     soundEngine.playPowerUp();
     confetti({
@@ -168,18 +185,28 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="flex items-center gap-2">
-            <input
-              type="text"
-              value={inputName}
-              onChange={(e) => setInputName(e.target.value)}
-              placeholder="Masukkan Nickname Kamu"
-              maxLength={20}
-              className={`${isDark ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400'} border text-xs px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-amber-500 w-44 sm:w-56`}
-            />
+          <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <div className="relative">
+              <input
+                type="text"
+                value={inputName}
+                onChange={(e) => {
+                  setInputName(e.target.value);
+                  if (inputError) setInputError(null);
+                }}
+                placeholder="Masukkan Nickname Kamu"
+                maxLength={20}
+                className={`${isDark ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400'} border text-xs px-3.5 py-2.5 rounded-xl focus:outline-none focus:border-amber-500 w-44 sm:w-56`}
+              />
+              {inputError && (
+                <span className="absolute left-0 -bottom-4 text-[10px] text-rose-500 font-semibold whitespace-nowrap">
+                  {inputError}
+                </span>
+              )}
+            </div>
             <button
               type="submit"
-              className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md active:scale-95 whitespace-nowrap"
+              className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md active:scale-95 whitespace-nowrap self-start sm:self-auto"
             >
               {submitted ? 'Tersimpan!' : 'Kirim Skor'}
             </button>
@@ -239,7 +266,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
 
               return (
                 <div
-                  key={`${entry.rank}-${entry.username}`}
+                  key={entry.playerId ? `player-${entry.playerId}` : `${entry.rank}-${entry.username}`}
                   className={`grid grid-cols-12 items-center p-4 transition-colors ${
                     entry.isCurrentUser
                       ? isDark ? 'bg-amber-950/40 border-l-4 border-amber-500 text-amber-200' : 'bg-amber-50/70 border-l-4 border-amber-500'
