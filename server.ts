@@ -10,6 +10,18 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
+const viteWss = new WebSocketServer({
+  noServer: true,
+  handleProtocols: (protocols) => {
+    if (protocols.has('vite-hmr')) return 'vite-hmr';
+    return Array.from(protocols)[0] || false;
+  },
+});
+
+viteWss.on('connection', (ws) => {
+  ws.send(JSON.stringify({ type: 'connected' }));
+  ws.on('message', () => {});
+});
 
 server.on('upgrade', (req, socket, head) => {
   try {
@@ -18,9 +30,14 @@ server.on('upgrade', (req, socket, head) => {
       wss.handleUpgrade(req, socket, head, (ws) => {
         wss.emit('connection', ws, req);
       });
+    } else {
+      viteWss.handleUpgrade(req, socket, head, (ws) => {
+        viteWss.emit('connection', ws, req);
+      });
     }
   } catch (err) {
     console.error('WebSocket upgrade error:', err);
+    socket.destroy();
   }
 });
 
@@ -377,19 +394,15 @@ app.get('/api/health', (req, res) => {
 
 // Setup Vite middleware in dev or static files in production
 async function startServer() {
-  const PORT = Number(process.env.PORT) || 3000;
+  // AI Studio requires dev server on port 3000. In Cloud Run container, PORT may be 8080 (used by Nginx).
+  const envPort = Number(process.env.PORT);
+  const PORT = (envPort && envPort !== 8080) ? envPort : (Number(process.env.DEFAULT_APP_PORT) || 3000);
 
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        ws: {
-          server,
-        },
-        hmr: {
-          server,
-        },
       },
       appType: 'spa',
     });
@@ -401,8 +414,14 @@ async function startServer() {
     });
   }
 
+  server.on('error', (err: any) => {
+    console.error('Server listen error:', err);
+  });
+
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server listening on port ${PORT}`);
+    console.log(`  ➜  Local:   http://localhost:${PORT}/`);
+    console.log(`  ➜  Network: http://0.0.0.0:${PORT}/`);
   });
 }
 
