@@ -23,7 +23,7 @@ interface MultiplayerRoomPanelProps {
   handleUpdateBotTeam: (botId: string, team: TeamId) => void;
   handleKickPlayer: (playerId: string) => void;
   startMatch: () => void;
-  handleAddBot: () => void;
+  handleAddBot?: (team?: TeamId) => void;
   handleDeleteRoom: () => void;
   selectedMapTheme: MapTheme;
   setShowMapSelectorModal: (show: boolean) => void;
@@ -231,7 +231,7 @@ export const MultiplayerRoomPanel: React.FC<MultiplayerRoomPanelProps> = ({
           </span>
           {isEffectiveHost && (
             <button
-              onClick={handleAddBot}
+              onClick={() => handleAddBot?.()}
               disabled={roomPlayersList.length >= totalPlayersConfig}
               className="text-[10px] font-bold text-cyan-500 hover:text-cyan-400 flex items-center gap-1 disabled:opacity-40"
             >
@@ -257,7 +257,7 @@ export const MultiplayerRoomPanel: React.FC<MultiplayerRoomPanelProps> = ({
                   const isHost = idx === 0 || player.isHost;
                   const displayName = (isLocal ? (playerName || 'Kamu') : (player.name || player.username || 'Player')).trim();
                   return (
-                    <div key={player.id || idx} className={`flex items-center justify-between px-2.5 py-1 rounded-lg text-xs border ${
+                    <div key={player.id || `blue-player-${idx}`} className={`flex items-center justify-between px-2.5 py-1 rounded-lg text-xs border ${
                       isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-xs'
                     }`}>
                       <div className="flex items-center gap-2 truncate">
@@ -285,10 +285,10 @@ export const MultiplayerRoomPanel: React.FC<MultiplayerRoomPanelProps> = ({
                 }
                 return (
                   <button
-                    key={`empty-blue-${idx}`}
+                    key={`empty-blue-slot-${idx}`}
                     onClick={() => {
                       if (playerTeam !== 'blue') handleSelectTeam('blue');
-                      else if (isEffectiveHost) handleAddBot();
+                      else if (isEffectiveHost) handleAddBot?.('blue');
                     }}
                     className={`w-full py-1.5 px-2 rounded-lg border border-dashed text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors ${
                       isDark ? 'border-slate-800 text-slate-500 hover:text-slate-300 hover:border-slate-700' : 'border-slate-300 text-slate-400 hover:text-slate-600 hover:border-slate-400'
@@ -316,7 +316,7 @@ export const MultiplayerRoomPanel: React.FC<MultiplayerRoomPanelProps> = ({
                   const isLocal = isLocalPlayer(player.id);
                   const displayName = (isLocal ? (playerName || 'Kamu') : (player.name || player.username || 'Player')).trim();
                   return (
-                    <div key={player.id || idx} className={`flex items-center justify-between px-2.5 py-1 rounded-lg text-xs border ${
+                    <div key={player.id || `red-player-${idx}`} className={`flex items-center justify-between px-2.5 py-1 rounded-lg text-xs border ${
                       isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-xs'
                     }`}>
                       <div className="flex items-center gap-2 truncate">
@@ -339,10 +339,10 @@ export const MultiplayerRoomPanel: React.FC<MultiplayerRoomPanelProps> = ({
                 }
                 return (
                   <button
-                    key={`empty-red-${idx}`}
+                    key={`empty-red-slot-${idx}`}
                     onClick={() => {
                       if (playerTeam !== 'red') handleSelectTeam('red');
-                      else if (isEffectiveHost) handleAddBot();
+                      else if (isEffectiveHost) handleAddBot?.('red');
                     }}
                     className={`w-full py-1.5 px-2 rounded-lg border border-dashed text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors ${
                       isDark ? 'border-slate-800 text-slate-500 hover:text-slate-300 hover:border-slate-700' : 'border-slate-300 text-slate-400 hover:text-slate-600 hover:border-slate-400'

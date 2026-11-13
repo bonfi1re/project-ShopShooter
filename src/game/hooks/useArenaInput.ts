@@ -94,7 +94,14 @@ export function useArenaInput({
     setJoyKnobPos({ x: 0, y: 0 });
   }, []);
 
+  useEffect(() => {
+    if (matchStatus !== 'playing') {
+      resetAllInputs();
+    }
+  }, [matchStatus, resetAllInputs]);
+
   const triggerDash = useCallback(() => {
+    if (matchStatus !== 'playing') return;
     const myP = simState.current.players.find((p: any) => isLocalPlayer(p.id));
     if (!myP || myP.isRespawning) return;
 
@@ -117,14 +124,14 @@ export function useArenaInput({
     };
     soundEngine.playPowerUp();
     addDamageText('💨 DASH EVASIVE!', myP.x, myP.y - 20, '#10b981');
-  }, [isLocalPlayer, simState, addDamageText]);
+  }, [matchStatus, isLocalPlayer, simState, addDamageText]);
 
   useEffect(() => {
     const handleDown = (e: KeyboardEvent) => {
+      if (matchStatus !== 'playing') return;
+
       if (['space', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(e.code.toLowerCase()) || e.key === ' ') {
-        if (matchStatus === 'playing') {
-          e.preventDefault();
-        }
+        e.preventDefault();
       }
 
       const keyLower = e.key.toLowerCase();
@@ -184,10 +191,12 @@ export function useArenaInput({
   }, [matchStatus, triggerDash, resetAllInputs, updateAimAngleFromClientCoords]);
 
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (matchStatus !== 'playing') return;
     updateAimAngleFromClientCoords(e.clientX, e.clientY);
   };
 
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (matchStatus !== 'playing') return;
     if (e.button === 0) {
       isMouseDown.current = true;
       updateAimAngleFromClientCoords(e.clientX, e.clientY);
@@ -198,6 +207,7 @@ export function useArenaInput({
   const handleCanvasMouseUp = () => { isMouseDown.current = false; };
 
   const handleCanvasTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (matchStatus !== 'playing') return;
     inputDevice.notifyTouchEvent();
     if (e.touches.length > 0) {
       const touch = e.touches[0];
@@ -206,6 +216,7 @@ export function useArenaInput({
   };
 
   const handleCanvasTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (matchStatus !== 'playing') return;
     if (e.touches.length > 0) {
       const touch = e.touches[0];
       updateAimAngleFromClientCoords(touch.clientX, touch.clientY);

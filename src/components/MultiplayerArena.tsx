@@ -155,13 +155,25 @@ export const MultiplayerArena: React.FC<MultiplayerArenaProps> = ({
     });
   }, []);
 
+  const killFeedTimersRef = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    const timers = killFeedTimersRef.current;
+    return () => {
+      timers.forEach((tId) => window.clearTimeout(tId));
+      timers.clear();
+    };
+  }, []);
+
   const addKillFeed = useCallback((killer: string, victim: string, team: TeamId) => {
     const id = `${Date.now()}-${Math.random()}`;
     const text = `💥 ${killer} mengeliminasi ${victim} (+1 Skor)`;
     setHudKillFeed((prev) => [{ id, text, team }, ...prev.slice(0, 3)]);
-    setTimeout(() => {
+    const timerId = window.setTimeout(() => {
+      killFeedTimersRef.current.delete(timerId);
       setHudKillFeed((prev) => prev.filter((item) => item.id !== id));
     }, 4000);
+    killFeedTimersRef.current.add(timerId);
   }, []);
 
   const respawnSinglePlayer = useCallback((p: any) => {
@@ -219,6 +231,7 @@ export const MultiplayerArena: React.FC<MultiplayerArenaProps> = ({
   const botLastShotTimes = useRef<Record<string, number>>({});
 
   const shootLaser = useCallback((playerId: string) => {
+    if (roomSync.matchStatusRef.current !== 'playing') return;
     const p = simState.current.players.find((item: any) => item.id === playerId || (isLocalPlayer(playerId) && isLocalPlayer(item.id)));
     if (!p || p.isRespawning) return;
 
@@ -284,7 +297,7 @@ export const MultiplayerArena: React.FC<MultiplayerArenaProps> = ({
     } else {
       pushAndSendBullet(createBullet(p.angle));
     }
-  }, [isLocalPlayer, roomSync.gameModeType, roomSync.wsRef]);
+  }, [isLocalPlayer, roomSync.gameModeType, roomSync.wsRef, roomSync.matchStatusRef]);
 
   // Use Input & Controls Hook
   const arenaInput = useArenaInput({
@@ -313,9 +326,7 @@ export const MultiplayerArena: React.FC<MultiplayerArenaProps> = ({
     lastDashTime: arenaInput.lastDashTime,
     isLocalPlayer,
     getCharacterStats,
-    finishMatch: () => {
-      // triggered via roomSync/finishMatch or loop
-    },
+    finishMatch: roomSync.finishMatch,
     shootLaser,
     respawnSinglePlayer,
     addDamageText,
@@ -577,11 +588,15 @@ export const MultiplayerArena: React.FC<MultiplayerArenaProps> = ({
               handleKickPlayer={roomSync.handleKickPlayer}
               startMatch={(mode) => roomSync.startMatch(mode, characterCustomization)}
               handleAddBot={roomSync.handleAddBot}
-              handleDeleteRoom={roomSync.handleLeaveMatch}
+              handleDeleteRoom={roomSync.handleDeleteRoom}
               selectedMapTheme={roomSync.selectedMapTheme}
               handleSelectMapTheme={roomSync.handleSelectMapTheme}
               setShowMapSelectorModal={setShowMapSelectorModal}
               isLocalPlayer={isLocalPlayer}
+              soloBotsList={roomSync.soloBotsList}
+              handleAddSoloBot={roomSync.handleAddSoloBot}
+              handleKickSoloBot={roomSync.handleKickSoloBot}
+              handleUpdateSoloBotTeam={roomSync.handleUpdateSoloBotTeam}
             />
           </div>
         )}
@@ -614,16 +629,9 @@ export const MultiplayerArena: React.FC<MultiplayerArenaProps> = ({
           }
           isDark={isDark}
           gameModeType={roomSync.gameModeType}
-          onPlayAgain={
-            roomSync.gameModeType === 'bot'
-              ? async () => {
-                  await roomSync.handleLeaveMatch();
-                  setTimeout(() => {
-                    roomSync.startMatch('bot', characterCustomization);
-                  }, 80);
-                }
-              : undefined
-          }
+          onPlayAgain={() => {
+            roomSync.restartMatch(characterCustomization);
+          }}
           onReturnToLobby={roomSync.handleLeaveMatch}
           onNavigateToRedemption={onNavigateToCart}
           onNavigateToLeaderboard={onNavigateToLeaderboard}

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { TeamId, MapTheme, CharacterClass, CollectibleSkill, InGameSkillType } from '../types';
 import { updatePlayerMovementSystem } from '../game/systems/playerMovementSystem';
 import { updateCombatCollisionSystem } from '../game/systems/combatCollisionSystem';
@@ -79,6 +79,30 @@ export const useArenaGameLoop = ({
   myPlayerId,
   isDark,
 }: UseArenaGameLoopProps) => {
+  const matchStatusRef = useRef(matchStatus);
+  matchStatusRef.current = matchStatus;
+
+  const finishMatchRef = useRef(finishMatch);
+  finishMatchRef.current = finishMatch;
+
+  const shootLaserRef = useRef(shootLaser);
+  shootLaserRef.current = shootLaser;
+
+  const respawnSinglePlayerRef = useRef(respawnSinglePlayer);
+  respawnSinglePlayerRef.current = respawnSinglePlayer;
+
+  const addDamageTextRef = useRef(addDamageText);
+  addDamageTextRef.current = addDamageText;
+
+  const addKillFeedRef = useRef(addKillFeed);
+  addKillFeedRef.current = addKillFeed;
+
+  const isLocalPlayerRef = useRef(isLocalPlayer);
+  isLocalPlayerRef.current = isLocalPlayer;
+
+  const getCharacterStatsRef = useRef(getCharacterStats);
+  getCharacterStatsRef.current = getCharacterStats;
+
   useEffect(() => {
     if (matchStatus !== 'playing') return;
 
@@ -89,7 +113,7 @@ export const useArenaGameLoop = ({
     let isLoopActive = true;
 
     const loop = (time: number) => {
-      if (!isLoopActive) return;
+      if (!isLoopActive || matchStatusRef.current !== 'playing') return;
 
       try {
         const dt = Math.min(0.08, (time - lastTick) / 1000);
@@ -104,11 +128,11 @@ export const useArenaGameLoop = ({
         sim.players.forEach((p) => {
           if (p.isRespawning) {
             p.respawnTimer -= dt;
-            if (isLocalPlayer(p.id)) {
+            if (isLocalPlayerRef.current(p.id)) {
               setHudRespawnTimer(Math.max(0, p.respawnTimer));
             }
             if (p.respawnTimer <= 0) {
-              respawnSinglePlayer(p);
+              respawnSinglePlayerRef.current(p);
             }
           }
           if (p.shieldTimer && p.shieldTimer > 0) {
@@ -133,7 +157,7 @@ export const useArenaGameLoop = ({
           const cdRemaining = Math.max(0, 3.5 - (Date.now() - lastDashTime.current) / 1000);
           setHudDashCooldown(cdRemaining > 0.05 ? cdRemaining : 0);
 
-          const myP = sim.players.find((p) => isLocalPlayer(p.id));
+          const myP = sim.players.find((p) => isLocalPlayerRef.current(p.id));
           if (myP) {
             setHudMyHp(myP.hp);
             setHudMyKills(myP.kills);
@@ -149,14 +173,16 @@ export const useArenaGameLoop = ({
           }
 
           if (sim.timeLeft <= 0) {
+            sim.timeLeft = 0;
+            setHudTimeLeft(0);
             isLoopActive = false;
-            finishMatch();
+            finishMatchRef.current();
             return;
           }
         }
 
         if (isMouseDown.current) {
-          shootLaser(myPlayerId.current);
+          shootLaserRef.current(myPlayerId.current);
         }
 
         sim.players.forEach((p) => {
@@ -173,23 +199,23 @@ export const useArenaGameLoop = ({
           simPlayers: sim.players,
           currentTheme: sim.currentTheme,
           dt,
-          isLocalPlayer,
-          getCharacterStats,
+          isLocalPlayer: isLocalPlayerRef.current,
+          getCharacterStats: getCharacterStatsRef.current,
           keysPressed: keysPressed.current,
           mobileMoveVector: mobileMoveVector.current,
           myPlayerId: myPlayerId.current,
           wsRef,
-          shootLaser,
+          shootLaser: shootLaserRef.current,
         });
 
         // 4. Combat & Collision System
         updateCombatCollisionSystem({
           sim,
           dt,
-          isLocalPlayer,
-          getCharacterStats,
-          addDamageText,
-          addKillFeed,
+          isLocalPlayer: isLocalPlayerRef.current,
+          getCharacterStats: getCharacterStatsRef.current,
+          addDamageText: addDamageTextRef.current,
+          addKillFeed: addKillFeedRef.current,
         });
 
         // 5. Update Ambient & Shopping Particles
@@ -218,7 +244,7 @@ export const useArenaGameLoop = ({
         if (canvas) {
           const viewW = canvas.width;
           const viewH = canvas.height;
-          const focusP = sim.players.find((p) => isLocalPlayer(p.id));
+          const focusP = sim.players.find((p) => isLocalPlayerRef.current(p.id));
           if (focusP) {
             sim.cameraX = Math.max(0, Math.min(WORLD_WIDTH - viewW, focusP.x - viewW / 2));
             sim.cameraY = Math.max(0, Math.min(WORLD_HEIGHT - viewH, focusP.y - viewH / 2));
@@ -233,7 +259,7 @@ export const useArenaGameLoop = ({
               canvas,
               sim,
               isDark,
-              isLocalPlayer,
+              isLocalPlayer: isLocalPlayerRef.current,
             });
           } catch (renderErr) {
             console.error("Render pass error:", renderErr);
@@ -253,7 +279,7 @@ export const useArenaGameLoop = ({
                 sim,
                 viewW: canvas?.width || 1200,
                 viewH: canvas?.height || 800,
-                isLocalPlayer,
+                isLocalPlayer: isLocalPlayerRef.current,
                 isDark,
               });
             } catch (radarErr) {
@@ -264,7 +290,7 @@ export const useArenaGameLoop = ({
       } catch (loopErr) {
         console.error("Game loop tick error:", loopErr);
       } finally {
-        if (isLoopActive) {
+        if (isLoopActive && matchStatusRef.current === 'playing') {
           animFrameId = requestAnimationFrame(loop);
         }
       }
@@ -274,25 +300,20 @@ export const useArenaGameLoop = ({
 
     return () => {
       isLoopActive = false;
-      if (animFrameId) {
+      if (animFrameId !== null) {
         cancelAnimationFrame(animFrameId);
+        animFrameId = null;
       }
     };
   }, [
     matchStatus,
     simState,
     canvasRef,
+    minimapCanvasRef,
     keysPressed,
     isMouseDown,
     mobileMoveVector,
     lastDashTime,
-    isLocalPlayer,
-    getCharacterStats,
-    finishMatch,
-    shootLaser,
-    respawnSinglePlayer,
-    addDamageText,
-    addKillFeed,
     setHudRespawnTimer,
     setHudTimeLeft,
     setHudBlueScore,

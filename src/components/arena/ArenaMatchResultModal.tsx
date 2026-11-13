@@ -180,7 +180,7 @@ export const ArenaMatchResultModal: React.FC<ArenaMatchResultModalProps> = ({
         {/* Action Buttons */}
         <div className="flex flex-col gap-2.5">
           {/* Main Action: Play Again or Return to Lobby */}
-          {gameModeType === 'bot' && onPlayAgain ? (
+          {onPlayAgain ? (
             <button
               onClick={onPlayAgain}
               className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold text-sm bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 shadow-md transition-all active:scale-[0.99]"
@@ -198,8 +198,8 @@ export const ArenaMatchResultModal: React.FC<ArenaMatchResultModalProps> = ({
             </button>
           )}
 
-          {/* Secondary Action: Return to Lobby (if Bot mode displayed Main Lagi) */}
-          {gameModeType === 'bot' && onPlayAgain && (
+          {/* Secondary Action: Return to Lobby */}
+          {onPlayAgain && (
             <button
               onClick={onReturnToLobby}
               className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-medium text-xs transition-colors border ${

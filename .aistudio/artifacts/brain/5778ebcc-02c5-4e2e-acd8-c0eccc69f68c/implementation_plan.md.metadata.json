@@ -1,6 +1,0 @@
-{
-  "summary":  "Rencana Refaktorisasi Modular ShopShooter: audit source code, peta pemecahan file raksasa MultiplayerArena.tsx (2.528 baris) menjadi modul-modul spesifik (<300 baris/file), struktur folder baru, tahapan implementasi bertahap, dan strategi pengujian fungsionalitas.",
-  "updatedAt":  "2026-10-29T06:11:33.357581279Z",
-  "requestFeedback":  true,
-  "userFacing":  true
-}

@@ -41,13 +41,17 @@ interface ArenaLobbyViewProps {
   handleUpdateBotTeam: (botId: string, team: TeamId) => void;
   handleKickPlayer: (playerId: string) => void;
   startMatch: (mode?: 'bot' | 'multiplayer') => void;
-  handleAddBot: () => void;
+  handleAddBot: (team?: TeamId) => void;
   handleDeleteRoom: () => void;
   selectedMapTheme: MapTheme;
   handleSelectMapTheme: (theme: MapTheme) => void;
   setShowMapSelectorModal: (show: boolean) => void;
   isLocalPlayer: (id: string) => boolean;
   onOpenProfile: () => void;
+  soloBotsList?: any[];
+  handleAddSoloBot?: (team?: TeamId) => void;
+  handleKickSoloBot?: (botId: string) => void;
+  handleUpdateSoloBotTeam?: (botId: string, team: TeamId) => void;
 }
 
 export const ArenaLobbyView: React.FC<ArenaLobbyViewProps> = ({
@@ -84,6 +88,10 @@ export const ArenaLobbyView: React.FC<ArenaLobbyViewProps> = ({
   setShowMapSelectorModal,
   isLocalPlayer,
   onOpenProfile,
+  soloBotsList,
+  handleAddSoloBot,
+  handleKickSoloBot,
+  handleUpdateSoloBotTeam,
 }) => {
   const currentMapIndex = MAP_CATALOG.findIndex((m) => m.id === selectedMapTheme);
   const activeMap = MAP_CATALOG[currentMapIndex >= 0 ? currentMapIndex : 0];
@@ -270,8 +278,12 @@ export const ArenaLobbyView: React.FC<ArenaLobbyViewProps> = ({
               setTotalPlayersConfig={setTotalPlayersConfig}
               isSelectingPlayers={isSelectingPlayers}
               setIsSelectingPlayers={setIsSelectingPlayers}
+              handleUpdateTotalSlots={handleUpdateTotalSlots}
               startMatch={() => startMatch('bot')}
               playerName={safePlayerName}
+              soloBotsList={soloBotsList}
+              handleAddSoloBot={handleAddSoloBot}
+              handleKickSoloBot={handleKickSoloBot}
             />
           )}
         </div>

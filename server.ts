@@ -72,11 +72,19 @@ interface RoomState {
   timeLeft: number;
   totalSlots: number;
   bots: any[];
+  mapTheme?: string;
+  version: number;
+  hostId?: string;
 }
 
 const rooms: Record<string, RoomState> = {};
 
 wss.on('connection', (ws: WebSocket) => {
+  (ws as any).isAlive = true;
+  ws.on('pong', () => {
+    (ws as any).isAlive = true;
+  });
+
   let currentRoom: string | null = null;
   let playerId: string | null = null;
 
@@ -103,11 +111,16 @@ wss.on('connection', (ws: WebSocket) => {
             timeLeft: 90,
             totalSlots: slots,
             bots: [],
+            version: 1,
+            hostId: asHost ? (playerId || undefined) : undefined,
           };
         }
 
         if (currentRoom && playerId) {
           const room = rooms[currentRoom];
+          if (asHost || !room.hostId) {
+            room.hostId = playerId;
+          }
           const existingP = room.players[playerId];
           const humanEntries = Object.keys(room.players).length;
           // Player's chosen team if provided, otherwise preserve or balance
@@ -122,6 +135,7 @@ wss.on('connection', (ws: WebSocket) => {
             angle: assignedTeam === 'blue' ? 0 : Math.PI,
             ws,
           };
+          room.version = (room.version || 0) + 1;
 
           // Broadcast updated room state to all in room
           broadcastToRoom(currentRoom, {
@@ -138,6 +152,7 @@ wss.on('connection', (ws: WebSocket) => {
           room.players[playerId].x = newTeam === 'blue' ? 220 + Math.random() * 60 : (2200 - 260) - Math.random() * 80;
           room.players[playerId].y = 440 + Math.random() * 400;
           room.players[playerId].angle = newTeam === 'blue' ? 0 : Math.PI;
+          room.version = (room.version || 0) + 1;
           broadcastToRoom(currentRoom, {
             type: 'room-updated',
             room: sanitizeRoom(room),
@@ -145,7 +160,7 @@ wss.on('connection', (ws: WebSocket) => {
         }
       } else if (msg.type === 'player-update' && currentRoom && playerId) {
         const room = rooms[currentRoom];
-        if (room && room.players[playerId]) {
+        if (room && room.gameState !== 'ended' && room.players[playerId]) {
           Object.assign(room.players[playerId], msg.updates);
           // Broadcast to other players
           broadcastToRoom(currentRoom, {
@@ -164,11 +179,14 @@ wss.on('connection', (ws: WebSocket) => {
           });
         }
       } else if (msg.type === 'player-shoot' && currentRoom && playerId) {
-        broadcastToRoom(currentRoom, {
-          type: 'bullet-fired',
-          playerId,
-          bullet: msg.bullet,
-        }, playerId);
+        const room = rooms[currentRoom];
+        if (room && room.gameState !== 'ended') {
+          broadcastToRoom(currentRoom, {
+            type: 'bullet-fired',
+            playerId,
+            bullet: msg.bullet,
+          }, playerId);
+        }
       } else if (msg.type === 'bot-hit' && currentRoom) {
         broadcastToRoom(currentRoom, {
           type: 'bot-damaged',
@@ -207,6 +225,7 @@ wss.on('connection', (ws: WebSocket) => {
               };
             }
             room.players[botToAdd.id] = botToAdd;
+            room.version = (room.version || 0) + 1;
             broadcastToRoom(currentRoom, {
               type: 'room-updated',
               room: sanitizeRoom(room),
@@ -221,10 +240,26 @@ wss.on('connection', (ws: WebSocket) => {
       } else if (msg.type === 'start-match' && currentRoom) {
         const room = rooms[currentRoom];
         if (room) {
+          if (room.gameState === 'playing') return;
           room.gameState = 'playing';
           room.timeLeft = 90;
           room.blueScore = 0;
           room.redScore = 0;
+          room.version = (room.version || 0) + 1;
+          Object.values(room.players).forEach((p) => {
+            p.score = 0;
+            p.kills = 0;
+            p.deaths = 0;
+            p.hp = p.maxHp || 100;
+          });
+          if (room.bots) {
+            room.bots.forEach((b) => {
+              b.score = 0;
+              b.kills = 0;
+              b.deaths = 0;
+              b.hp = b.maxHp || 100;
+            });
+          }
           broadcastToRoom(currentRoom, {
             type: 'match-started',
             room: sanitizeRoom(room),
@@ -238,6 +273,7 @@ wss.on('connection', (ws: WebSocket) => {
           if (room.bots) {
             room.bots = room.bots.filter(b => b.id !== targetId);
           }
+          room.version = (room.version || 0) + 1;
           broadcastToRoom(currentRoom, {
             type: 'room-updated',
             room: sanitizeRoom(room),
@@ -247,6 +283,17 @@ wss.on('connection', (ws: WebSocket) => {
         const room = rooms[currentRoom];
         if (room && msg.totalSlots) {
           room.totalSlots = msg.totalSlots;
+          room.version = (room.version || 0) + 1;
+          broadcastToRoom(currentRoom, {
+            type: 'room-updated',
+            room: sanitizeRoom(room),
+          });
+        }
+      } else if (msg.type === 'change-map' && currentRoom) {
+        const room = rooms[currentRoom];
+        if (room && msg.mapTheme) {
+          room.mapTheme = msg.mapTheme;
+          room.version = (room.version || 0) + 1;
           broadcastToRoom(currentRoom, {
             type: 'room-updated',
             room: sanitizeRoom(room),
@@ -270,6 +317,7 @@ wss.on('connection', (ws: WebSocket) => {
             room.players[msg.botId].color = newColor;
             room.players[msg.botId].y = newTeam === 'blue' ? 380 + Math.random() * 80 : 740 + Math.random() * 80;
           }
+          room.version = (room.version || 0) + 1;
           broadcastToRoom(currentRoom, {
             type: 'room-updated',
             room: sanitizeRoom(room),
@@ -283,27 +331,29 @@ wss.on('connection', (ws: WebSocket) => {
           roomCode: roomToDel,
         });
         currentRoom = null;
-      } else if (msg.type === 'leave-room' && currentRoom && playerId) {
-        const room = rooms[currentRoom];
-        if (room) {
-          delete room.players[playerId];
-          if (Object.keys(room.players).length === 0) {
-            delete rooms[currentRoom];
-          } else {
-            broadcastToRoom(currentRoom, {
-              type: 'player-left',
-              playerId,
-              room: sanitizeRoom(room),
-            });
-          }
+      } else if (msg.type === 'ping') {
+        (ws as any).isAlive = true;
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
         }
+      } else if (msg.type === 'leave-room' && currentRoom) {
+        const targetId = msg.playerId || playerId;
+        handlePlayerDisconnect(currentRoom, targetId);
         currentRoom = null;
+        playerId = null;
       } else if (msg.type === 'end-match' && currentRoom) {
         const room = rooms[currentRoom];
         if (room) {
+          if (room.gameState === 'ended') return;
           room.gameState = 'ended';
+          room.timeLeft = 0;
+          if (typeof msg.blueScore === 'number') room.blueScore = msg.blueScore;
+          if (typeof msg.redScore === 'number') room.redScore = msg.redScore;
+          room.version = (room.version || 0) + 1;
           broadcastToRoom(currentRoom, {
             type: 'match-ended',
+            blueScore: room.blueScore,
+            redScore: room.redScore,
             room: sanitizeRoom(room),
           });
         }
@@ -314,20 +364,52 @@ wss.on('connection', (ws: WebSocket) => {
   });
 
   ws.on('close', () => {
-    if (currentRoom && playerId && rooms[currentRoom]) {
-      delete rooms[currentRoom].players[playerId];
-      if (Object.keys(rooms[currentRoom].players).length === 0) {
-        delete rooms[currentRoom];
-      } else {
-        broadcastToRoom(currentRoom, {
-          type: 'player-left',
-          playerId,
-          room: sanitizeRoom(rooms[currentRoom]),
-        });
-      }
+    if (currentRoom && playerId) {
+      handlePlayerDisconnect(currentRoom, playerId);
+      currentRoom = null;
+      playerId = null;
     }
   });
 });
+
+function handlePlayerDisconnect(roomCode: string | null, targetPlayerId: string | null) {
+  if (!roomCode || !targetPlayerId) return;
+  const room = rooms[roomCode];
+  if (!room || !room.players[targetPlayerId]) return;
+
+  const leavingPlayer = room.players[targetPlayerId];
+  const leavingName = leavingPlayer?.name || leavingPlayer?.username || 'Pemain';
+
+  delete room.players[targetPlayerId];
+  if (room.bots) {
+    room.bots = room.bots.filter(b => b.id !== targetPlayerId);
+  }
+
+  const remainingHumans = Object.values(room.players).filter(p => !p.isBot);
+  if (remainingHumans.length === 0) {
+    delete rooms[roomCode];
+    console.log(`Room ${roomCode} deleted: no human players remaining`);
+    return;
+  }
+
+  let newHostId = room.hostId;
+  if (room.hostId === targetPlayerId) {
+    newHostId = remainingHumans[0].id;
+    room.hostId = newHostId;
+    console.log(`Host migration in room ${roomCode}: new host is ${newHostId}`);
+  }
+
+  room.version = (room.version || 0) + 1;
+
+  broadcastToRoom(roomCode, {
+    type: 'player-left',
+    playerId: targetPlayerId,
+    playerName: leavingName,
+    newHostId,
+    version: room.version,
+    room: sanitizeRoom(room),
+  });
+}
 
 function broadcastToRoom(roomCode: string, payload: any, excludePlayerId?: string) {
   const room = rooms[roomCode];
@@ -384,6 +466,9 @@ function sanitizeRoom(room: RoomState) {
     redScore: room.redScore || 0,
     timeLeft: room.timeLeft,
     totalSlots: room.totalSlots || 4,
+    mapTheme: room.mapTheme || 'mall',
+    version: room.version || 1,
+    hostId: room.hostId || null,
   };
 }
 
